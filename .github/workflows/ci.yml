@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (Python ${{ matrix.python-version }}, CPU, base install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install the base package and pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+      - name: Base import stays light
+        run: python -c "import sys, aor; assert 'torch' not in sys.modules and 'numpy' not in sys.modules; print(aor.__version__)"
+      - name: Quickstart
+        run: python examples/quickstart.py
+      - name: Table 1 from the records
+        run: aor table --per-model
+      - name: Tests
+        run: pytest -q
+
+  decoding:
+    name: decoding tests (Python 3.12, CPU torch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install CPU torch, transformers and the package
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[test]" "transformers>=4.56"
+      - name: Decoding tests
+        run: pytest -q tests/test_decoding.py
+
+  install:
+    name: clean install, used from outside the checkout
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Non-editable install
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+      - name: Import and run away from the source tree
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c "import aor; print(aor.__version__)"
+          aor --version
+          aor demo
+          aor table --records "$GITHUB_WORKSPACE/records"

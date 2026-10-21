@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Run outputs. The records behind the paper's tables live in records/ and are tracked.
+runs/
+outputs/
+wandb/
+*.log
+
+# Weights and caches
+hf/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+.gradio/
+
+# Secrets and local settings
+.env
+.DS_Store
+.vscode/
+.idea/
