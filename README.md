@@ -14,10 +14,10 @@
 </div>
 
 <p align="center">
-  <img src="assets/demo.gif" width="100%" alt="The browser demo steps through four test questions of the paper. For each it shows the passage with AoR's answer marked, the answers of sampling and CAD, and every step of AoR: the initial answer and its support test, the closed-book answer and the memory veto, and the repairs. On NQ-Swap with Llama-3.1-8B, sampling and CAD answer Jay Baruchel, the CAD repair repeats the vetoed closed-book answer and is rejected, and the ID repair answers Neal Dahlen from the passage." />
+  <img src="assets/replay.gif" width="100%" alt="An animated replay of AoR on four test questions of the paper. The passage, question and answer sit on top, and three rows below show AoR, CAD alone and plain sampling. AoR's row lights up its steps in turn (sample, closed-book, CAD repair, ID repair) and logs each answer with the result of its check. On NQ-Original with Qwen3-8B, AoR accepts the sampled answer 111 because the passage contains it, while CAD alone answers two. On NQ-Swap with Llama-3.1-8B, the sampled answer and the closed-book answer are both Jay Baruchel, which the passage does not contain; the CAD repair repeats it and is rejected, and the ID repair Neal Dahlen is returned." />
 </p>
 
-<p align="center"><em>The browser demo replays four test questions of the paper (<code>python demo/app.py</code>). Each step shows what AoR checked and why it kept or replaced an answer.</em></p>
+<p align="center"><em>AoR on the four test questions that the paper shows as examples. It accepts a sampled answer that the passage supports (1) and repairs the others (2 to 4). The memory veto rejects a repair that repeats the closed-book answer (3) and masks its letter on a multiple-choice question (4). Open <code>demo/replay.html</code> in a browser to replay it.</em></p>
 
 ---
 
@@ -173,6 +173,8 @@ aor ask --model qwen3-8b --passage "..." --question "..."
 
 ### Browser demo
 
+Open `demo/replay.html` in any browser for the step-by-step replay above; it needs no install. The Gradio demo plays the same replay, lists every step of the four examples in a table with the passage, and with a model answers your own questions:
+
 ```bash
 pip install -e ".[demo]"
 python demo/app.py                                  # the paper examples, replayed without a model
@@ -307,11 +309,11 @@ aor/
   table.py        Table 1 from the records or from runs
   demo.py         the four paper examples, replayed
   cli.py          the aor command
-demo/app.py       browser demo (Gradio)
+demo/             the browser demo (app.py, Gradio) and the step-by-step replay (replay.html)
 examples/         quickstart
 experiments/      run_main.py and table1_main.py
 records/          per-example scores behind Table 1
-tests/            the procedure, scoring, decoding, and Table 1 from the records
+tests/            the procedure, scoring, decoding, the replay page, and Table 1 from the records
 ```
 
 ## FAQ

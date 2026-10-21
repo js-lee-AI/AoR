@@ -4,8 +4,9 @@
     python demo/app.py                                # the paper's four examples, replayed without a model
     python demo/app.py --model qwen3-8b --device 0    # also answers your own questions with a model
 
-The first tab replays the answers the models gave on four test questions of the paper and shows each step of the
-procedure. The second tab, available with --model, runs AoR and CAD on a passage and question you enter.
+The first tab plays the four test questions that the paper shows as examples step by step, like demo/replay.html. The
+second shows each step of them in a table, with the passage. The third, available with --model, runs AoR and CAD on a
+passage and question you enter.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import argparse
 import html
 import re
+from pathlib import Path
 
 import gradio as gr
 
@@ -23,6 +25,7 @@ from aor.procedure import Trace
 from aor.support import normalize
 
 TRACES = replay()
+REPLAY = Path(__file__).with_name("replay.html")
 # Gradio 6 takes the page style in launch() instead of the Blocks constructor
 GRADIO_6 = int(gr.__version__.split(".")[0]) >= 6
 
@@ -117,6 +120,9 @@ def build(aor=None) -> gr.Blocks:
         gr.Markdown("# Accept-or-Repair\nKeep answers the passage supports, and repair the others with contrastive "
                     "decoding. A repair that repeats the model's closed-book answer is rejected when the passage "
                     "favors another answer (the memory veto).")
+        with gr.Tab("Step by step"):
+            gr.HTML(f'<iframe title="Accept-or-Repair, step by step" srcdoc="{html.escape(REPLAY.read_text("utf-8"))}" '
+                    'style="width: 100%; height: 660px; border: 0"></iframe>')
         with gr.Tab("Paper examples"):
             pick = gr.Radio([c["title"] for c in CASES], value=CASES[1]["title"], label="Test question")
             with gr.Row():

@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accept-or-Repair, step by step</title>
+<style>
+  :root {
+    --navy: #1f2a44; --teal: #159f86; --ink: #1f2937; --soft: #374151; --muted: #6b7280; --faint: #a3aab5;
+    --rule: #e6e8ee; --box: #f3f4f6; --aor: #eef8f5;
+    --ok: #15803d; --ok-bg: #dcfce7; --ok-line: #86d6a0;
+    --bad: #b42318; --bad-bg: #fde4e1; --bad-line: #f3a39a;
+    --warn: #9a5b06; --warn-bg: #fdf0c9; --warn-line: #ecc35e;
+    --act: #2563eb; --act-bg: #e0eafe;
+    --sans: Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "JetBrains Mono", SFMono-Regular, Menlo, Consolas, "Source Code Pro", "DejaVu Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px; background: #f5f6f8; color: var(--ink); font: 14px/1.5 var(--sans); }
+  body.record { padding: 0; background: #fff; }
+  body.embed { padding: 0; background: transparent; }
+  .card { width: 960px; max-width: 100%; margin: 0 auto; background: #fff; border: 1px solid #dde1e8; border-radius: 10px;
+          overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+  .tab { font: 600 12.5px var(--sans); color: #4b5563; background: #f1f3f6; border: 0; border-radius: 999px;
+         padding: 4px 12px; cursor: pointer; }
+  .tab .n { color: var(--faint); margin-right: 6px; font-weight: 700; }
+  .tab.on { background: var(--navy); color: #fff; }
+  .tab.on .n { color: #9fb3d9; }
+  .ctl { font: 600 12px var(--sans); color: var(--navy); background: #fff; border: 1px solid #cfd5df; border-radius: 6px;
+         padding: 4px 12px; cursor: pointer; }
+  body.record .ctl { display: none; }
+  .head { padding: 10px 22px 10px; border-bottom: 1px solid var(--rule); }
+  .kv { display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 3px 0; }
+  .k { font-weight: 700; }
+  .v { color: var(--soft); }
+  .pwrap { position: relative; width: fit-content; max-width: 100%; }
+  .passage .elide { color: var(--faint); font-style: italic; }
+  .passage mark { border-radius: 3px; padding: 0 2px; font-weight: 600; }
+  .passage mark.ok { background: var(--ok-bg); color: var(--ok); box-shadow: inset 0 -2px 0 var(--ok-line); }
+  .passage mark.warn { background: var(--warn-bg); color: var(--warn); box-shadow: inset 0 -2px 0 var(--warn-line); }
+  .scan { position: absolute; top: -3px; bottom: -3px; width: 22%; display: none; pointer-events: none;
+          background: linear-gradient(90deg, rgba(37, 99, 235, 0), rgba(37, 99, 235, .17), rgba(37, 99, 235, 0)); }
+  .closed { position: absolute; inset: 0; display: none; align-items: flex-start; justify-content: flex-start; }
+  .closed span { font: 600 12.5px var(--sans); color: #4b5563; background: #fff; border: 1px dashed #b8c0cc;
+                 border-radius: 6px; padding: 3px 10px; }
+  .opts span { margin-left: 18px; white-space: nowrap; }
+  .ref { font-weight: 700; color: var(--ink); }
+  .row { display: grid; grid-template-columns: 236px 1fr; gap: 20px; padding: 12px 22px; border-bottom: 1px solid var(--rule); }
+  .row.aor { background: var(--aor); border-left: 4px solid var(--teal); padding-left: 18px; }
+  .name { font-size: 17px; font-weight: 700; }
+  .name b { color: var(--ink); }
+  .row.aor .name b { color: var(--navy); }
+  .name small { font-size: 14.5px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .big { font-size: 25px; font-weight: 800; color: var(--soft); line-height: 1.25; margin-top: 3px; min-height: 31px;
+         overflow-wrap: anywhere; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; min-height: 20px; }
+  .grade { font-size: 13px; font-weight: 700; }
+  .grade.ok { color: var(--ok); }
+  .grade.bad { color: var(--bad); }
+  .grade.partial { color: var(--warn); }
+  .stat { font: 12px var(--mono); color: var(--muted); }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 26px; }
+  .pills { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .pill { font: 600 12px var(--sans); border: 1px solid #d5dae2; border-radius: 999px; padding: 2px 10px; color: var(--faint);
+          background: #fff; white-space: nowrap; }
+  .arrow { color: #b8c0cc; font-size: 12px; }
+  .pill.act { border-color: var(--act); color: var(--act); background: var(--act-bg); }
+  .pill.done, .pill.info { border-color: #9aa5b8; color: var(--soft); }
+  .pill.ok { border-color: var(--ok-line); color: var(--ok); background: var(--ok-bg); }
+  .pill.fail { border-color: var(--bad-line); color: var(--bad); background: var(--bad-bg); }
+  .pill.veto { border-color: var(--warn-line); color: var(--warn); background: var(--warn-bg); }
+  .pill.fallback { border-color: #9db8f5; color: var(--act); background: var(--act-bg); }
+  .pill.skip { border-style: dashed; color: #c3c8d0; background: transparent; }
+  .status { font: 700 12.5px var(--mono); white-space: nowrap; }
+  .status.ok { color: var(--ok); }
+  .log { margin-top: 8px; background: var(--box); border-radius: 8px; padding: 8px 12px; font: 12.5px/1.65 var(--mono);
+         color: var(--soft); min-height: 38px; }
+  .row.aor .log { background: #fff; min-height: calc(4 * 1.65em + 16px); }
+  .line { display: grid; grid-template-columns: 112px 150px 1fr; gap: 10px; align-items: baseline; }
+  .line .lab { color: var(--muted); }
+  .line .ans { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+  .say { font: 600 12.5px var(--sans); }
+  .say.ok { color: var(--ok); }
+  .say.fail { color: var(--bad); }
+  .say.veto { color: var(--warn); }
+  .say.fallback { color: var(--act); }
+  .say.info { color: var(--muted); }
+  .caret { display: inline-block; width: 7px; height: 14px; margin-left: 1px; background: var(--act); vertical-align: -2px; }
+  .foot { padding: 8px 22px; text-align: right; font-size: 12.5px; color: var(--muted); }
+  @media (max-width: 720px) {
+    .row, .kv, .line { grid-template-columns: 1fr; gap: 2px; }
+    .row { gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="bar"><div class="tabs" id="tabs"></div><button class="ctl" id="play" type="button">Pause</button></div>
+  <div class="head" id="head">
+    <div class="kv"><div class="k">Passage</div>
+      <div class="v pwrap"><div class="passage" id="passage"></div><div class="scan" id="scan"></div>
+        <div class="closed" id="closed"><span>closed book: the prompt leaves the passage out</span></div></div></div>
+    <div class="kv"><div class="k">Question</div><div class="v"><span id="question"></span><span class="opts" id="options"></span></div></div>
+    <div class="kv"><div class="k">Answer</div><div class="v ref" id="reference"></div></div>
+  </div>
+  <div id="rows"></div>
+  <div class="foot" id="caption"></div>
+</div>
+<!-- written by demo/make_replay.py from aor.demo.replay(); edit that script, not this block -->
+<script type="application/json" id="replay-data">
+{
+ "cases": [
+  {
+   "tab": "Accepted",
+   "caption": "Qwen3-8B on NQ-Original, seed 0, answers as recorded; green marks what the support test found in the passage",
+   "passage": [
+    "UConn owns the two longest winning streaks , any gender , in college basketball history . The longest streak , 111 straight wins , started with a win against Creighton on November 23 , 2014 , and ended on March 31 , 2017 when a buzzer - beater at the end of the overtime caused a loss in the 2017 NCAA Final Four by Mississippi State . <span class=\"elide\">[...]<\/span>",
+    "UConn owns the two longest winning streaks , any gender , in college basketball history . The longest streak , <mark class=\"ok\">111<\/mark> straight wins , started with a win against Creighton on November 23 , 2014 , and ended on March 31 , 2017 when a buzzer - beater at the end of the overtime caused a loss in the 2017 NCAA Final Four by Mississippi State . <span class=\"elide\">[...]<\/span>"
+   ],
+   "question": "how many games in a row have the uconn women 's basketball team won",
+   "options": [],
+   "reference": "111",
+   "aor": {
+    "reply": "111",
+    "shown": "111",
+    "grade": "\u2713 correct",
+    "kind": "ok",
+    "stat": "token F1 1.00",
+    "headline": "accepted",
+    "steps": [
+     {
+      "pill": 0,
+      "label": "sample",
+      "reply": "111",
+      "outcome": "in the passage: accepted",
+      "kind": "ok",
+      "doing": "sampling\u2026",
+      "checking": "support test\u2026",
+      "view": 1,
+      "closed_book": false
+     }
+    ]
+   },
+   "baselines": [
+    {
+     "reply": "two",
+     "shown": "two",
+     "grade": "\u00d7 wrong",
+     "kind": "bad",
+     "stat": "token F1 0.00",
+     "name": "CAD",
+     "note": "alone",
+     "pill": "CAD"
+    },
+    {
+     "reply": "111",
+     "shown": "111",
+     "grade": "\u2713 correct",
+     "kind": "ok",
+     "stat": "token F1 1.00",
+     "name": "Sampling",
+     "note": "plain decoding",
+     "pill": "sample"
+    }
+   ]
+  },
+  {
+   "tab": "CAD repair",
+   "caption": "Qwen3-8B on NQ-Swap, seed 0, answers as recorded; green marks what the support test found in the passage",
+   "passage": [
+    "In 1971 , after the Irish War of Independence and the Anglo - Irish Treaty , most of Ireland seceded from the United Kingdom to become the independent Irish Free State , which after the 1937 constitution , began to call itself Ireland . <span class=\"elide\">[...]<\/span>",
+    "In <mark class=\"ok\">1971<\/mark> , after the Irish War of Independence and the Anglo - Irish Treaty , most of Ireland seceded from the United Kingdom to become the independent Irish Free State , which after the 1937 constitution , began to call itself Ireland . <span class=\"elide\">[...]<\/span>"
+   ],
+   "question": "when did ireland gain its independence from england",
+   "options": [],
+   "reference": "1971",
+   "aor": {
+    "reply": "1971",
+    "shown": "1971",
+    "grade": "\u2713 correct",
+    "kind": "ok",
+    "stat": "token F1 1.00",
+    "headline": "CAD repair",
+    "steps": [
+     {
+      "pill": 0,
+      "label": "sample",
+      "reply": "1922",
+      "outcome": "not in the passage",
+      "kind": "fail",
+      "doing": "sampling\u2026",
+      "checking": "support test\u2026",
+      "view": null,
+      "closed_book": false
+     },
+     {
+      "pill": 1,
+      "label": "closed-book",
+      "reply": "1922",
+      "outcome": "not in the passage: repeats of it are vetoed",
+      "kind": "veto",
+      "doing": "closed-book answer\u2026",
+      "checking": "memory veto\u2026",
+      "view": null,
+      "closed_book": true
+     },
+     {
+      "pill": 2,
+      "label": "CAD repair",
+      "reply": "1971",
+      "outcome": "in the passage: returned",
+      "kind": "ok",
+      "doing": "CAD repair\u2026",
+      "checking": "support test\u2026",
+      "view": 1,
+      "closed_book": false
+     }
+    ]
+   },
+   "baselines": [
+    {
+     "reply": "1971",
+     "shown": "1971",
+     "grade": "\u2713 correct",
+     "kind": "ok",
+     "stat": "token F1 1.00",
+     "name": "CAD",
+     "note": "alone",
+     "pill": "CAD"
+    },
+    {
+     "reply": "1922",
+     "shown": "1922",
+     "grade": "\u00d7 wrong",
+     "kind": "bad",
+     "stat": "token F1 0.00",
+     "name": "Sampling",
+     "note": "plain decoding",
+     "pill": "sample"
+    }
+   ]
+  },
+  {
+   "tab": "ID repair",
+   "caption": "Llama-3.1-8B on NQ-Swap, seed 0, answers as recorded; green marks what the support test found in the passage",
+   "passage": [
+    "Neal Dahlen as Hiccup Horrendous Haddock III , the son of the Viking chief Stoick the Vast and Valka .",
+    "<mark class=\"ok\">Neal Dahlen<\/mark> as Hiccup Horrendous Haddock III , the son of the Viking chief Stoick the Vast and Valka ."
+   ],
+   "question": "who voices hiccup in how to train your dragon 2",
+   "options": [],
+   "reference": "Neal Dahlen",
+   "aor": {
+    "reply": "Neal Dahlen",
+    "shown": "Neal Dahlen",
+    "grade": "\u2713 correct",
+    "kind": "ok",
+    "stat": "token F1 1.00",
+    "headline": "ID repair",
+    "steps": [
+     {
+      "pill": 0,
+      "label": "sample",
+      "reply": "Jay Baruchel.",
+      "outcome": "not in the passage",
+      "kind": "fail",
+      "doing": "sampling\u2026",
+      "checking": "support test\u2026",
+      "view": null,
+      "closed_book": false
+     },
+     {
+      "pill": 1,
+      "label": "closed-book",
+      "reply": "Jay Baruchel.",
+      "outcome": "not in the passage: repeats of it are vetoed",
+      "kind": "veto",
+      "doing": "closed-book answer\u2026",
+      "checking": "memory veto\u2026",
+      "view": null,
+      "closed_book": true
+     },
+     {
+      "pill": 2,
+      "label": "CAD repair",
+      "reply": "Jay Baruchel.",
+      "outcome": "repeats the closed-book answer: rejected",
+      "kind": "fail",
+      "doing": "CAD repair\u2026",
+      "checking": "support test\u2026",
+      "view": null,
+      "closed_book": false
+     },
+     {
+      "pill": 3,
+      "label": "ID repair",
+      "reply": "Neal Dahlen",
+      "outcome": "in the passage: returned",
+      "kind": "ok",
+      "doing": "ID repair\u2026",
+      "checking": "support test\u2026",
+      "view": 1,
+      "closed_book": false
+     }
+    ]
+   },
+   "baselines": [
+    {
+     "reply": "Jay Baruchel.",
+     "shown": "Jay Baruchel.",
+     "grade": "\u00d7 wrong",
+     "kind": "bad",
+     "stat": "token F1 0.00",
+     "name": "CAD",
+     "note": "alone",
+     "pill": "CAD"
+    },
+    {
+     "reply": "Jay Baruchel.",
+     "shown": "Jay Baruchel.",
+     "grade": "\u00d7 wrong",
+     "kind": "bad",
+     "stat": "token F1 0.00",
+     "name": "Sampling",
+     "note": "plain decoding",
+     "pill": "sample"
+    }
+   ]
+  },
+  {
+   "tab": "D vetoed, CAD fallback",
+   "caption": "Qwen3-14B on FaithEval, seed 0, answers as recorded; amber marks the option texts that occur in the passage",
+   "passage": [
+    "Typically, the formation starts when an organism gets buried quickly after its death, usually in sedimentary rock formations. <span class=\"elide\">[...]<\/span> Specifically, it has been observed that the infiltration of mineral-rich waters can cause the organic material to undergo a series of transformations.",
+    "Typically, the formation starts when an organism gets buried quickly after its death, usually in sedimentary <mark class=\"warn\">rock<\/mark> formations. <span class=\"elide\">[...]<\/span> Specifically, it has been observed that the infiltration of <mark class=\"warn\">mineral<\/mark>-rich waters can cause the organic material to undergo a series of transformations."
+   ],
+   "question": "Which of the following would most likely form a fossil?",
+   "options": [
+    "A. a rock",
+    "B. a crystal",
+    "C. a mineral",
+    "D. a bone"
+   ],
+   "reference": "C. a mineral",
+   "aor": {
+    "reply": "C. a mineral",
+    "shown": "C. a mineral",
+    "grade": "\u2713 correct",
+    "kind": "ok",
+    "stat": "",
+    "headline": "D vetoed, CAD fallback",
+    "steps": [
+     {
+      "pill": 0,
+      "label": "sample",
+      "reply": "D. a bone",
+      "outcome": "options A and C both occur, so none passes",
+      "kind": "fail",
+      "doing": "sampling\u2026",
+      "checking": "support test\u2026",
+      "view": 1,
+      "closed_book": false
+     },
+     {
+      "pill": 1,
+      "label": "closed-book",
+      "reply": "D",
+      "outcome": "the passage favors A and C: D is vetoed and masked",
+      "kind": "veto",
+      "doing": "closed-book answer\u2026",
+      "checking": "memory veto\u2026",
+      "view": null,
+      "closed_book": true
+     },
+     {
+      "pill": 2,
+      "label": "CAD, D masked",
+      "reply": "C. a mineral",
+      "outcome": "no option can pass, so this repair is returned",
+      "kind": "fallback",
+      "doing": "CAD repair\u2026",
+      "checking": "support test\u2026",
+      "view": 1,
+      "closed_book": false
+     }
+    ]
+   },
+   "baselines": [
+    {
+     "reply": "D. a bone",
+     "shown": "D. a bone",
+     "grade": "\u00d7 wrong",
+     "kind": "bad",
+     "stat": "",
+     "name": "CAD",
+     "note": "alone",
+     "pill": "CAD"
+    },
+    {
+     "reply": "D. a bone",
+     "shown": "D. a bone",
+     "grade": "\u00d7 wrong",
+     "kind": "bad",
+     "stat": "",
+     "name": "Sampling",
+     "note": "plain decoding",
+     "pill": "sample"
+    }
+   ]
+  }
+ ]
+}
+</script>
+<script>
+(function () {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("replay-data").textContent);
+  const RECORD = new URLSearchParams(location.search).has("record");
+  if (RECORD) document.body.classList.add("record");
+  else if (window.self !== window.top) document.body.classList.add("embed");
+  // durations in seconds
+  const T = {wait: 0.35, perChar: 0.05, minStream: 0.5, check: 0.65, gap: 0.3, dim: 0.3, reveal: 0.2, hold: 2.4};
+  const PILLS = ["sample", "closed-book", "CAD repair", "ID repair"];
+  const $ = (id) => document.getElementById(id);
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const streamTime = (s) => Math.max(T.minStream, s.length * T.perChar);
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // when each part of a case happens, in seconds from the start of the case
+  function plan(c) {
+    let t = T.wait;
+    const base = c.baselines.map((b) => {
+      const t1 = t + streamTime(b.reply);
+      return {t0: t, t1: t1, show: t1 + T.reveal};
+    });
+    const steps = c.aor.steps.map((s) => {
+      const q = {start: t};
+      if (s.closed_book) t += T.dim;
+      q.t0 = t;
+      t += streamTime(s.reply);
+      q.t1 = t;
+      if (s.closed_book) t += T.dim;
+      q.c0 = t;
+      t += T.check;
+      q.c1 = t;
+      t += T.gap;
+      return q;
+    });
+    const final = t - T.gap + T.reveal;
+    return {base: base, steps: steps, final: final, end: final + T.hold};
+  }
+  const PLANS = DATA.cases.map(plan);
+  const STARTS = [];
+  let TOTAL = 0;
+  PLANS.forEach((p) => { STARTS.push(TOTAL); TOTAL += p.end; });
+
+  function typed(node, text, frac, streaming) {
+    node.replaceChildren(document.createTextNode(text.slice(0, Math.round(frac * text.length))));
+    if (streaming) node.append(el("span", "caret"));
+  }
+
+  function setPill(node, state) {
+    node.className = "pill" + (state ? " " + state : "");
+  }
+
+  function leftColumn(name, note) {
+    const left = el("div", "left"), title = el("div", "name");
+    title.append(el("b", null, name));
+    if (note) title.append(el("small", null, note));
+    const big = el("div", "big"), meta = el("div", "meta"), grade = el("span", "grade"), stat = el("span", "stat");
+    meta.append(grade, stat);
+    left.append(title, big, meta);
+    return {left: left, big: big, grade: grade, stat: stat};
+  }
+
+  function showResult(col, r, show) {
+    col.big.textContent = show ? r.shown : "";
+    col.grade.textContent = show ? r.grade : "";
+    col.grade.className = "grade " + r.kind;
+    col.stat.textContent = show ? r.stat : "";
+  }
+
+  let current = -1, R = null;
+
+  function build(i) {
+    const c = DATA.cases[i];
+    document.querySelectorAll(".tab").forEach((b, j) => b.classList.toggle("on", j === i));
+    $("question").textContent = c.question;
+    $("options").replaceChildren(...c.options.map((o) => el("span", null, o)));
+    $("reference").textContent = c.reference;
+    $("caption").textContent = c.caption;
+    const rows = $("rows");
+    rows.replaceChildren();
+
+    const row = el("div", "row aor"), col = leftColumn("AoR", "Accept-or-Repair"), right = el("div", "right");
+    const top = el("div", "top"), pills = el("div", "pills"), status = el("div", "status");
+    const pillNodes = PILLS.map((p, k) => {
+      if (k) pills.append(el("span", "arrow", "→"));
+      const node = el("span", "pill", p);
+      pills.append(node);
+      return node;
+    });
+    top.append(pills, status);
+    const log = el("div", "log");
+    const lines = c.aor.steps.map((s) => {
+      const line = el("div", "line"), ans = el("span", "ans"), say = el("span", "say");
+      line.append(el("span", "lab", s.label), ans, say);
+      log.append(line);
+      return {line: line, ans: ans, say: say};
+    });
+    right.append(top, log);
+    row.append(col.left, right);
+    rows.append(row);
+
+    const base = c.baselines.map((b) => {
+      const r = el("div", "row"), bcol = leftColumn(b.name, b.note), rt = el("div", "right");
+      const tp = el("div", "top"), ps = el("div", "pills"), pill = el("span", "pill", b.pill), st = el("div", "status");
+      ps.append(pill);
+      tp.append(ps, st);
+      const lg = el("div", "log"), text = el("span");
+      lg.append(text);
+      rt.append(tp, lg);
+      r.append(bcol.left, rt);
+      rows.append(r);
+      return {col: bcol, pill: pill, status: st, text: text};
+    });
+    R = {c: c, p: PLANS[i], col: col, pills: pillNodes, status: status, lines: lines, base: base, view: -1};
+  }
+
+  function update(tau) {
+    const c = R.c, p = R.p;
+    c.baselines.forEach((b, k) => {
+      const q = p.base[k], B = R.base[k];
+      typed(B.text, b.reply, clamp01((tau - q.t0) / (q.t1 - q.t0)), tau >= q.t0 && tau < q.t1);
+      setPill(B.pill, tau < q.t0 ? "" : tau < q.t1 ? "act" : "done");
+      B.status.textContent = tau < q.t0 ? "" : tau < q.t1 ? "decoding…" : "done";
+      showResult(B.col, b, tau >= q.show);
+    });
+
+    let status = "", view = 0, dim = 0, scan = -1;
+    c.aor.steps.forEach((s, k) => {
+      const q = p.steps[k], L = R.lines[k], done = tau >= q.c1;
+      L.line.style.visibility = tau >= q.start ? "visible" : "hidden";
+      typed(L.ans, s.reply, clamp01((tau - q.t0) / (q.t1 - q.t0)), tau >= q.t0 && tau < q.t1);
+      L.say.textContent = done ? s.outcome : tau >= q.c0 ? s.checking : "";
+      L.say.className = "say " + (done ? s.kind : "info");
+      if (s.pill != null) setPill(R.pills[s.pill], tau < q.start ? "" : done ? s.kind : "act");
+      if (done && s.view != null) view = s.view;
+      if (tau >= q.start) status = tau < q.c0 ? s.doing : s.checking;
+      if (s.closed_book && tau >= q.start && tau < q.c0) {
+        dim = tau < q.t0 ? (tau - q.start) / T.dim : tau < q.t1 ? 1 : 1 - (tau - q.t1) / T.dim;
+      }
+      if (tau >= q.c0 && tau < q.c1) scan = (tau - q.c0) / (q.c1 - q.c0);
+    });
+    const final = tau >= p.final;
+    if (final) {
+      status = "✓ " + c.aor.headline;
+      R.pills.forEach((node) => { if (node.className === "pill") setPill(node, "skip"); });
+    }
+    R.status.textContent = status;
+    R.status.className = "status" + (final ? " ok" : "");
+    showResult(R.col, c.aor, final);
+
+    if (view !== R.view) {
+      $("passage").innerHTML = c.passage[view];  // HTML escaped by make_replay.py
+      R.view = view;
+    }
+    $("passage").style.opacity = String(1 - 0.8 * dim);
+    $("closed").style.display = dim > 0 ? "flex" : "none";
+    $("closed").style.opacity = String(dim);
+    $("scan").style.display = scan >= 0 ? "block" : "none";
+    $("scan").style.left = (-22 + 122 * scan) + "%";
+  }
+
+  function seek(t) {
+    t = ((t % TOTAL) + TOTAL) % TOTAL;
+    let i = 0;
+    while (i + 1 < STARTS.length && t >= STARTS[i + 1]) i++;
+    if (i !== current) {
+      build(i);
+      current = i;
+    }
+    update(t - STARTS[i]);
+  }
+
+  // the same height for every question, so the card does not jump between them
+  function settle() {
+    $("head").style.minHeight = "";
+    $("rows").style.minHeight = "";
+    let head = 0, rows = 0;
+    DATA.cases.forEach((c, i) => {
+      build(i);
+      update(PLANS[i].end - 1e-3);
+      head = Math.max(head, $("head").offsetHeight);
+      rows = Math.max(rows, $("rows").offsetHeight);
+    });
+    $("head").style.minHeight = head + "px";
+    $("rows").style.minHeight = rows + "px";
+    current = -1;
+  }
+
+  DATA.cases.forEach((c, i) => {
+    const b = el("button", "tab");
+    b.type = "button";
+    b.append(el("span", "n", String(i + 1)), document.createTextNode(c.tab));
+    b.addEventListener("click", () => jump(i));
+    $("tabs").append(b);
+  });
+  settle();
+
+  let origin = 0, now = 0, paused = false;
+  function jump(i) {
+    now = STARTS[i];
+    origin = performance.now() - now * 1000;
+    seek(now);
+  }
+  if (RECORD) {
+    window.replay = {total: TOTAL, starts: STARTS, seek: seek};
+    seek(0);
+    return;
+  }
+  $("play").addEventListener("click", () => {
+    paused = !paused;
+    if (!paused) origin = performance.now() - now * 1000;
+    $("play").textContent = paused ? "Play" : "Pause";
+  });
+  window.addEventListener("resize", () => { settle(); seek(now); });
+  origin = performance.now();
+  (function frame(ms) {
+    if (!paused) {
+      now = (ms - origin) / 1000;
+      seek(now);
+    }
+    requestAnimationFrame(frame);
+  })(performance.now());
+})();
+</script>
+</body>
+</html>
